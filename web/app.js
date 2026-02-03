@@ -2941,7 +2941,7 @@ function onKeyDown(evt) {
   if (cmd === 1 || cmd === 8 || cmd === 5 || cmd === 12) {
     // either CTRL or META key with optional SHIFT.
     switch (evt.keyCode) {
-      case 70: // f
+      case 83: // s
         if (!this.supportsIntegratedFind && !evt.shiftKey) {
           this.findBar?.open();
           handled = true;
@@ -3007,10 +3007,10 @@ function onKeyDown(evt) {
     // CTRL or META without shift
     if (cmd === 1 || cmd === 8) {
       switch (evt.keyCode) {
-        case 83: // s
-          eventBus.dispatch("download", { source: window });
-          handled = true;
-          break;
+        // case 83: // s
+        //   eventBus.dispatch("download", { source: window });
+        //   handled = true;
+        //   break;
 
         case 79: // o
           if (typeof PDFJSDev === "undefined" || PDFJSDev.test("GENERIC")) {

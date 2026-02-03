@@ -36,7 +36,7 @@
   --doorhanger-height: 8px;
 
   --main-color: light-dark(rgb(12 12 13), rgb(249 249 250));
-  --body-bg-color: light-dark(rgb(212 212 215), rgb(42 42 46));
+  --body-bg-color: light-dark(rgb(255 255 255), rgb(42 42 46));
   --progressBar-color: light-dark(rgb(10 132 255), rgb(0 96 223));
   --progressBar-bg-color: light-dark(rgb(221 221 222), rgb(40 40 43));
   --progressBar-blend-color: light-dark(rgb(116 177 239), rgb(20 68 133));
@@ -50,7 +50,7 @@
     rgb(42 42 46 / 0.9)
   );
   --sidebar-toolbar-bg-color: light-dark(rgb(245 246 247), rgb(50 50 52));
-  --toolbar-bg-color: light-dark(rgb(249 249 250), rgb(56 56 61));
+  --toolbar-bg-color: light-dark(rgb(255 255 255), rgb(56 56 61));
   --toolbar-border-color: light-dark(rgb(184 184 184), rgb(12 12 13));
   --toolbar-box-shadow: 0 1px 0 var(--toolbar-border-color);
   --toolbar-border-bottom: none;

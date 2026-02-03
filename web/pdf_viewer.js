@@ -1664,7 +1664,7 @@ class PDFViewer {
         break;
       case "Fit":
       case "FitB":
-        scale = "page-fit";
+        scale = "page-width";
         break;
       case "FitH":
       case "FitBH":

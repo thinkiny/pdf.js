@@ -114,7 +114,7 @@ class ViewsManager extends Sidebar {
       globalAbortSignal
     );
     this.isOpen = false;
-    this.active = SidebarView.THUMBS;
+    this.active = SidebarView.OUTLINE;
     this.isInitialViewSet = false;
     this.isInitialEventDispatched = false;
 
@@ -179,7 +179,7 @@ class ViewsManager extends Sidebar {
     this.isInitialEventDispatched = false;
 
     this.#hideUINotification(/* reset = */ true);
-    this.switchView(SidebarView.THUMBS);
+    this.switchView(SidebarView.OUTLINE);
 
     this.outlineButton.disabled =
       this.attachmentsButton.disabled =
@@ -468,10 +468,10 @@ class ViewsManager extends Sidebar {
 
       if (count) {
         this.#showUINotification();
-      } else if (this.active === view) {
+      } else {
         // If the `view` was opened by the user during document load,
         // switch away from it if it turns out to be empty.
-        this.switchView(SidebarView.THUMBS);
+        this.switchView(this.active);
       }
     };
 

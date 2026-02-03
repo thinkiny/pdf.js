@@ -39,6 +39,7 @@ import {
 import {
   getCurrentTransform,
   getCurrentTransformInverse,
+  getRGB,
   getRGBA,
   makePathFromDrawOPS,
   OutputScale,
@@ -630,7 +631,7 @@ class CanvasGraphics {
     const height = this.ctx.canvas.height;
 
     const savedFillStyle = this.ctx.fillStyle;
-    this.ctx.fillStyle = background || "#ffffff";
+    this.ctx.fillStyle = this.pageColors ? "#ffffff" : background || "#ffffff";
     this.ctx.fillRect(0, 0, width, height);
     this.ctx.fillStyle = savedFillStyle;
 
@@ -818,18 +819,52 @@ class CanvasGraphics {
   }
 
   #drawFilter() {
-    if (this.pageColors) {
-      const hcmFilterId = this.filterFactory.addHCMFilter(
-        this.pageColors.foreground,
-        this.pageColors.background
-      );
-      if (hcmFilterId !== "none") {
-        const savedFilter = this.ctx.filter;
-        this.ctx.filter = hcmFilterId;
-        this.ctx.drawImage(this.ctx.canvas, 0, 0);
-        this.ctx.filter = savedFilter;
+    let pageColors = this.pageColors;
+    if (!pageColors && typeof document !== "undefined") {
+      const styles = getComputedStyle(document.documentElement);
+      const background =
+        styles.getPropertyValue("--page-bg-color").trim() || null;
+      const foreground =
+        styles.getPropertyValue("--page-fg-color").trim() || null;
+      if (background && foreground) {
+        pageColors = { foreground, background };
       }
     }
+    if (!pageColors) {
+      return;
+    }
+
+    const [fgR, fgG, fgB] = getRGB(pageColors.foreground);
+    const [bgR, bgG, bgB] = getRGB(pageColors.background);
+    if (
+      (fgR === 0 &&
+        fgG === 0 &&
+        fgB === 0 &&
+        bgR === 255 &&
+        bgG === 255 &&
+        bgB === 255) ||
+      (fgR === bgR && fgG === bgG && fgB === bgB)
+    ) {
+      return;
+    }
+
+    const { width, height } = this.ctx.canvas;
+    const imageData = this.ctx.getImageData(0, 0, width, height);
+    const { data } = imageData;
+    for (let i = 0, ii = data.length; i < ii; i += 4) {
+      const alpha = data[i + 3];
+      if (alpha === 0) {
+        continue;
+      }
+
+      const luminance =
+        (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) /
+        255;
+      data[i] = Math.round(fgR + luminance * (bgR - fgR));
+      data[i + 1] = Math.round(fgG + luminance * (bgG - fgG));
+      data[i + 2] = Math.round(fgB + luminance * (bgB - fgB));
+    }
+    this.ctx.putImageData(imageData, 0, 0);
   }
 
   _scaleImage(img, inverseTransform) {

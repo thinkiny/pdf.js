@@ -1031,6 +1031,11 @@ class PDFPageView extends BasePDFPageView {
   }
 
   _getRenderingContext(canvas, transform, recordOperations, recordImages) {
+    const styles = getComputedStyle(document.documentElement);
+    const background = styles.getPropertyValue("--page-bg-color").trim() || null;
+    const foreground = styles.getPropertyValue("--page-fg-color").trim() || null;
+    const pageColors =
+      background && foreground ? { background, foreground } : this.pageColors;
     return {
       canvas,
       transform,
@@ -1038,7 +1043,8 @@ class PDFPageView extends BasePDFPageView {
       annotationMode: this.#annotationMode,
       optionalContentConfigPromise: this._optionalContentConfigPromise,
       annotationCanvasMap: this._annotationCanvasMap,
-      pageColors: this.pageColors,
+      pageColors,
+      background,
       isEditing: this.#isEditing,
       recordOperations,
       recordImages,

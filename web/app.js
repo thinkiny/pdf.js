@@ -364,6 +364,7 @@ const PDFViewerApplication = {
       disableHistory: x => x === "true",
       disableRange: x => x === "true",
       disableStream: x => x === "true",
+      transparentPageBackground: x => x === "true",
       verbosity: x => x | 0,
     };
 
@@ -391,6 +392,7 @@ const PDFViewerApplication = {
         supportsDownloading: x => x === "true",
         viewerCssTheme: x => parseInt(x, 10),
         forcePageColors: x => x === "true",
+        transparentPageBackground: x => x === "true",
         pageColorsBackground: x => x,
         pageColorsForeground: x => x,
         sidebarViewOnLoad: x => parseInt(x, 10),
@@ -613,7 +615,10 @@ const PDFViewerApplication = {
           )
         : null;
 
-    const maxCanvasPixels = AppOptions.get("maxCanvasPixels"),
+    const transparentPageBackground = AppOptions.get(
+        "transparentPageBackground"
+      ),
+      maxCanvasPixels = AppOptions.get("maxCanvasPixels"),
       maxCanvasDim = AppOptions.get("maxCanvasDim"),
       capCanvasAreaFactor = AppOptions.get("capCanvasAreaFactor");
     const pdfViewer = (this.pdfViewer = new PDFViewer({
@@ -658,6 +663,7 @@ const PDFViewerApplication = {
       pageColors,
       mlManager,
       abortSignal,
+      transparentPageBackground,
       supportsPinchToZoom: this.supportsPinchToZoom,
       enableAutoLinking: AppOptions.get("enableAutoLinking"),
       minDurationToUpdateCanvas: AppOptions.get("minDurationToUpdateCanvas"),
@@ -678,6 +684,7 @@ const PDFViewerApplication = {
         maxCanvasDim,
         pageColors,
         abortSignal,
+        transparentPageBackground,
         enableSplitMerge,
         enableMerge,
         enableNewBadge: AppOptions.get("enableNewBadge"),

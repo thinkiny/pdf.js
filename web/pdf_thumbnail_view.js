@@ -21,9 +21,14 @@
 // eslint-disable-next-line max-len
 /** @typedef {import("./pdf_rendering_queue").PDFRenderingQueue} PDFRenderingQueue */
 
-import { OutputScale, RenderingCancelledException } from "pdfjs-lib";
+import {
+  FeatureTest,
+  OutputScale,
+  RenderingCancelledException,
+} from "pdfjs-lib";
 import { RenderableView, RenderingStates } from "./renderable_view.js";
 import { AppOptions } from "./app_options.js";
+import { resolvePageColors } from "./base_pdf_page_view.js";
 
 const DRAW_UPSCALE_FACTOR = 2; // See comment in `PDFThumbnailView.draw` below.
 const MAX_NUM_SCALING_STEPS = 3;
@@ -49,18 +54,32 @@ const THUMBNAIL_WIDTH = 126; // px
  * @property {Object} [pageColors] - Overwrites background and foreground colors
  *   with user defined ones in order to improve readability in high contrast
  *   mode.
+ * @property {boolean} [transparentPageBackground] - Render thumbnail canvases
+ *   with a transparent background.
  */
 
-function getTempCanvas(width, height) {
-  const canvas = new OffscreenCanvas(width, height);
-  // Since this is a temporary canvas, we need to fill it with a white
-  // background ourselves. `#getPageDrawContext` uses CSS rules for this.
-  const ctx = canvas.getContext("2d", { alpha: false });
-  ctx.save();
-  ctx.fillStyle = "rgb(255, 255, 255)";
-  ctx.fillRect(0, 0, width, height);
-  ctx.restore();
-  return [canvas, ctx];
+class TempImageFactory {
+  static getCanvas(width, height, transparent = false) {
+    let tempCanvas;
+    if (FeatureTest.isOffscreenCanvasSupported) {
+      tempCanvas = new OffscreenCanvas(width, height);
+    } else {
+      tempCanvas = document.createElement("canvas");
+      tempCanvas.width = width;
+      tempCanvas.height = height;
+    }
+
+    const ctx = tempCanvas.getContext("2d", { alpha: transparent });
+    if (!transparent) {
+      // Since this is a temporary canvas, we need to fill it with a white
+      // background ourselves. `#getPageDrawContext` uses CSS rules for this.
+      ctx.save();
+      ctx.fillStyle = "rgb(255, 255, 255)";
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    }
+    return [tempCanvas, ctx];
+  }
 }
 
 class PDFThumbnailView extends RenderableView {
@@ -80,6 +99,7 @@ class PDFThumbnailView extends RenderableView {
     maxCanvasPixels,
     maxCanvasDim,
     pageColors,
+    transparentPageBackground,
     enableSplitMerge = false,
   }) {
     super();
@@ -95,6 +115,7 @@ class PDFThumbnailView extends RenderableView {
     this.maxCanvasPixels = maxCanvasPixels ?? AppOptions.get("maxCanvasPixels");
     this.maxCanvasDim = maxCanvasDim || AppOptions.get("maxCanvasDim");
     this.pageColors = pageColors || null;
+    this.transparentPageBackground = transparentPageBackground === true;
 
     this.eventBus = eventBus;
     this.linkService = linkService;
@@ -150,6 +171,7 @@ class PDFThumbnailView extends RenderableView {
       maxCanvasPixels: this.maxCanvasPixels,
       maxCanvasDim: this.maxCanvasDim,
       pageColors: this.pageColors,
+      transparentPageBackground: this.transparentPageBackground,
       enableSplitMerge: !!this.checkbox,
     });
     const { imageContainer } = this;
@@ -306,6 +328,10 @@ class PDFThumbnailView extends RenderableView {
     this.resume = null;
   }
 
+  _useCanvasAlpha() {
+    return this.transparentPageBackground && !this.pageColors;
+  }
+
   #getPageDrawContext(upscaleFactor = 1) {
     // Keep the no-thumbnail outline visible, i.e. `data-loaded === false`,
     // until rendering/image conversion is complete, to avoid display issues.
@@ -352,7 +378,11 @@ class PDFThumbnailView extends RenderableView {
       console.error("Must be in new state before drawing");
       return;
     }
-    const { pageColors, pdfPage } = this;
+    const { pdfPage } = this;
+    const alpha = this._useCanvasAlpha();
+    const { background, pageColors: renderPageColors } = resolvePageColors(
+      this.pageColors
+    );
 
     if (!pdfPage) {
       this.renderingState = RenderingStates.FINISHED;
@@ -383,11 +413,16 @@ class PDFThumbnailView extends RenderableView {
     };
 
     const renderContext = {
-      canvas,
+      canvas: alpha ? null : canvas,
+      canvasContext: alpha ? canvas.getContext("2d", { alpha: true }) : null,
       transform,
       viewport: drawViewport,
       optionalContentConfigPromise: this._optionalContentConfigPromise,
-      pageColors,
+      pageColors: renderPageColors,
+      background: alpha ? "rgba(0,0,0,0)" : background,
+      transparentPageBackground: alpha,
+      recordImages: !pdfPage.imageCoordinates && !!renderPageColors,
+      imageCoordinates: pdfPage.imageCoordinates,
     };
     const renderTask = (this.renderTask = pdfPage.render(renderContext));
     renderTask.onContinue = renderContinueCallback;
@@ -461,9 +496,10 @@ class PDFThumbnailView extends RenderableView {
   }
 
   #reduceImage(img) {
+    const alpha = this._useCanvasAlpha();
     const { canvas } = this.#getPageDrawContext(1);
     const ctx = canvas.getContext("2d", {
-      alpha: false,
+      alpha,
       willReadFrequently: false,
     });
 
@@ -483,9 +519,10 @@ class PDFThumbnailView extends RenderableView {
     }
     // drawImage does an awful job of rescaling the image, doing it gradually.
     let [reducedWidth, reducedHeight] = this.#getReducedImageDims(canvas);
-    const [reducedImage, reducedImageCtx] = getTempCanvas(
+    const [reducedImage, reducedImageCtx] = TempImageFactory.getCanvas(
       reducedWidth,
-      reducedHeight
+      reducedHeight,
+      alpha
     );
 
     while (reducedWidth > img.width || reducedHeight > img.height) {

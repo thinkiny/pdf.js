@@ -1240,6 +1240,9 @@ class PDFDocumentProxy {
  * @property {Object} [pageColors] - Overwrites background and foreground colors
  *   with user defined ones in order to improve readability in high contrast
  *   mode.
+ * @property {boolean} [transparentPageBackground] - Suppress page-sized PDF
+ *   background paints when rendering into a transparent page canvas.
+ *   This option is ignored when the `pageColors`-option is used.
  * @property {Promise<OptionalContentConfig>} [optionalContentConfigPromise] -
  *   A promise that should resolve with an {@link OptionalContentConfig}
  *   created from `PDFDocumentProxy.getOptionalContentConfig`. If `null`,
@@ -1250,6 +1253,8 @@ class PDFDocumentProxy {
  * @property {PrintAnnotationStorage} [printAnnotationStorage]
  * @property {boolean} [isEditing] - Render the page in editing mode.
  * @property {boolean} [recordImages] - Record the location of images in the PDF
+ * @property {Float32Array | Float16Array} [imageCoordinates] - Cached
+ *   coordinates of images in normalized canvas space.
  * @property {boolean} [recordOperations] - Record the dependencies and bounding
  *   boxes of all PDF operations that render onto the canvas.
  * @property {OperationsFilter} [operationsFilter] - If provided, only
@@ -1478,9 +1483,11 @@ class PDFPageProxy {
     optionalContentConfigPromise = null,
     annotationCanvasMap = null,
     pageColors = null,
+    transparentPageBackground = false,
     printAnnotationStorage = null,
     isEditing = false,
     recordImages = false,
+    imageCoordinates = this.imageCoordinates,
     recordOperations = false,
     operationsFilter = null,
   }) {
@@ -1611,9 +1618,11 @@ class PDFPageProxy {
         imagesTracker: shouldRecordImages
           ? new CanvasImagesTracker(canvas)
           : null,
+        imageCoordinates,
         viewport,
         transform,
         background,
+        transparentPageBackground,
       },
       objs: this.objs,
       commonObjs: this.commonObjs,
@@ -3393,6 +3402,8 @@ class InternalRenderTask {
       background,
       dependencyTracker,
       imagesTracker,
+      imageCoordinates,
+      transparentPageBackground,
     } = this.params;
 
     // When printing in Firefox, we get a specific context in mozPrintCallback
@@ -3400,7 +3411,7 @@ class InternalRenderTask {
     const canvasContext =
       this._canvasContext ||
       this._canvas.getContext("2d", {
-        alpha: false,
+        alpha: !!transparentPageBackground,
         willReadFrequently: !this._enableHWA,
       });
 
@@ -3414,13 +3425,15 @@ class InternalRenderTask {
       this.annotationCanvasMap,
       this.pageColors,
       dependencyTracker,
-      imagesTracker
+      imagesTracker,
+      imageCoordinates
     );
     this.gfx.beginDrawing({
       transform,
       viewport,
       transparency,
       background,
+      transparentPageBackground,
     });
     this.operatorListIdx = 0;
     this.graphicsReady = true;

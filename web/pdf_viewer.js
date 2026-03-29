@@ -149,6 +149,8 @@ function isValidAnnotationEditorMode(mode) {
  * @property {Object} [pageColors] - Overwrites background and foreground colors
  *   with user defined ones in order to improve readability in high contrast
  *   mode.
+ * @property {boolean} [transparentPageBackground] - Render page canvases with
+ *   a transparent background. The default value is `false`.
  * @property {boolean} [supportsPinchToZoom] - Enable zooming on pinch gesture.
  *   The default value is `true`.
  * @property {boolean} [enableAutoLinking] - Enable creation of hyperlinks from
@@ -291,6 +293,8 @@ class PDFViewer {
 
   #textLayerMode = TextLayerMode.ENABLE;
 
+  #transparentPageBackground = false;
+
   #viewerAlert = null;
 
   #copiedPageViews = null;
@@ -374,6 +378,8 @@ class PDFViewer {
     }
     this.#enablePermissions = options.enablePermissions || false;
     this.pageColors = options.pageColors || null;
+    this.#transparentPageBackground =
+      options.transparentPageBackground === true;
     this.#mlManager = options.mlManager || null;
     this.#supportsPinchToZoom = options.supportsPinchToZoom !== false;
     this.#enableAutoLinking = options.enableAutoLinking !== false;
@@ -1051,7 +1057,9 @@ class PDFViewer {
         // see issue 15795.
         viewer.style.setProperty("--scale-factor", viewport.scale);
 
-        if (pageColors?.background) {
+        if (this.#transparentPageBackground) {
+          viewer.style.setProperty("--page-bg-color", "transparent");
+        } else if (pageColors?.background) {
           viewer.style.setProperty("--page-bg-color", pageColors.background);
         }
         if (
@@ -1103,6 +1111,7 @@ class PDFViewer {
             pageColors,
             l10n: this.l10n,
             layerProperties: this._layerProperties,
+            transparentPageBackground: this.#transparentPageBackground,
             enableAutoLinking: this.#enableAutoLinking,
             minDurationToUpdateCanvas: this.#minDurationToUpdateCanvas,
             commentManager: this.#commentManager,

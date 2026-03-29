@@ -63,6 +63,8 @@ const SPACE_FOR_DRAG_MARKER_WHEN_NO_NEXT_ELEMENT = 15;
  * @property {Object} [pageColors] - Overwrites background and foreground colors
  *   with user defined ones in order to improve readability in high contrast
  *   mode.
+ * @property {boolean} [transparentPageBackground] - Render thumbnail canvases
+ *   with a transparent background.
  * @property {AbortSignal} [abortSignal] - The AbortSignal for the window
  *   events.
  * @property {boolean} [enableNewBadge] - Enables the "new" badge for the split
@@ -188,6 +190,7 @@ class PDFThumbnailViewer {
     maxCanvasPixels,
     maxCanvasDim,
     pageColors,
+    transparentPageBackground,
     abortSignal,
     enableMerge,
     enableSplitMerge,
@@ -207,6 +210,7 @@ class PDFThumbnailViewer {
     this.maxCanvasDim = maxCanvasDim;
     this.pageColors = pageColors || null;
     this.#abortSignal = abortSignal;
+    this.transparentPageBackground = transparentPageBackground === true;
     this.#enableMerge = enableMerge || false;
     this.#enableSplitMerge = enableSplitMerge || false;
     this.#statusLabel = statusBar?.viewsManagerStatusActionLabel || null;
@@ -555,6 +559,7 @@ class PDFThumbnailViewer {
             maxCanvasPixels: this.maxCanvasPixels,
             maxCanvasDim: this.maxCanvasDim,
             pageColors: this.pageColors,
+            transparentPageBackground: this.transparentPageBackground,
             enableSplitMerge: this.#enableSplitMerge,
           });
           this._thumbnails.push(thumbnail);

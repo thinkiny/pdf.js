@@ -39,11 +39,11 @@ import {
   floorToDivide,
   TextLayerMode,
 } from "./ui_utils.js";
+import { BasePDFPageView, resolvePageColors } from "./base_pdf_page_view.js";
 import { AnnotationEditorLayerBuilder } from "./annotation_editor_layer_builder.js";
 import { AnnotationLayerBuilder } from "./annotation_layer_builder.js";
 import { AppOptions } from "./app_options.js";
 import { Autolinker } from "./autolinker.js";
-import { BasePDFPageView } from "./base_pdf_page_view.js";
 import { DrawLayerBuilder } from "./draw_layer_builder.js";
 import { GenericL10n } from "web-null_l10n";
 import { PDFPageDetailView } from "./pdf_page_detail_view.js";
@@ -104,6 +104,8 @@ import { XfaLayerBuilder } from "./xfa_layer_builder.js";
  * @property {Object} [pageColors] - Overwrites background and foreground colors
  *   with user defined ones in order to improve readability in high contrast
  *   mode.
+ * @property {boolean} [transparentPageBackground] - Render the page canvas
+ *   with a transparent background.
  * @property {L10n} [l10n] - Localization service.
  * @property {Object} [layerProperties] - The object that is used to lookup
  *   the necessary layer-properties.
@@ -252,7 +254,9 @@ class PDFPageView extends BasePDFPageView {
         this.scale * PixelsPerInch.PDF_TO_CSS_UNITS
       );
 
-      if (this.pageColors?.background) {
+      if (this.transparentPageBackground) {
+        container?.style.setProperty("--page-bg-color", "transparent");
+      } else if (this.pageColors?.background) {
         container?.style.setProperty(
           "--page-bg-color",
           this.pageColors.background
@@ -285,7 +289,8 @@ class PDFPageView extends BasePDFPageView {
     const clone = new PDFPageView({
       container: null,
       eventBus: this.eventBus,
-      pagesColors: this.pageColors,
+      pageColors: this.pageColors,
+      transparentPageBackground: this.transparentPageBackground,
       renderingQueue: this.renderingQueue,
       enableOptimizedPartialRendering: this.enableOptimizedPartialRendering,
       minDurationToUpdateCanvas: this.minDurationToUpdateCanvas,
@@ -1031,11 +1036,7 @@ class PDFPageView extends BasePDFPageView {
   }
 
   _getRenderingContext(canvas, transform, recordOperations, recordImages) {
-    const styles = getComputedStyle(document.documentElement);
-    const background = styles.getPropertyValue("--page-bg-color").trim() || null;
-    const foreground = styles.getPropertyValue("--page-fg-color").trim() || null;
-    const pageColors =
-      background && foreground ? { background, foreground } : this.pageColors;
+    const { background, pageColors } = this._getPageColors();
     return {
       canvas,
       transform,
@@ -1045,10 +1046,16 @@ class PDFPageView extends BasePDFPageView {
       annotationCanvasMap: this._annotationCanvasMap,
       pageColors,
       background,
+      transparentPageBackground: this.transparentPageBackground,
       isEditing: this.#isEditing,
       recordOperations,
       recordImages,
+      imageCoordinates: this.imageCoordinates,
     };
+  }
+
+  _getPageColors() {
+    return resolvePageColors(this.pageColors);
   }
 
   async draw() {
@@ -1175,8 +1182,10 @@ class PDFPageView extends BasePDFPageView {
       this.#hasRestrictedScaling &&
       !this.recordedBBoxes;
 
+    const { pageColors } = this._getPageColors();
     const recordImages =
-      this.imagesRightClickMinSize !== -1 && !this.imageCoordinates;
+      (this.imagesRightClickMinSize !== -1 || !!pageColors) &&
+      !this.imageCoordinates;
 
     // Rendering area
     const transform = outputScale.scaled

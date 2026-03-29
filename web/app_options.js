@@ -607,6 +607,14 @@ const defaultOptions = new Map([
     },
   ],
   [
+    "transparentPageBackground",
+    {
+      /** @type {boolean} */
+      value: false,
+      kind: OptionKind.VIEWER + OptionKind.PREFERENCE,
+    },
+  ],
+  [
     "pageColorsBackground",
     {
       /** @type {string} */

@@ -74,6 +74,25 @@ const SCALE_MATRIX = new DOMMatrix();
 // Used to get some coordinates.
 const XY = new Float32Array(2);
 
+const FILTER_MODE_OPAQUE_RECOLOR = 0;
+const FILTER_MODE_TRANSPARENT_FOREGROUND = 1;
+
+function isFullyTransparentColor(color) {
+  const normalized = color.trim().toLowerCase();
+  if (normalized === "transparent") {
+    return true;
+  }
+  if (!normalized.startsWith("rgba(") || !normalized.endsWith(")")) {
+    return false;
+  }
+  const parts = normalized.slice(5, -1).split(",");
+  if (parts.length !== 4) {
+    return false;
+  }
+  const alpha = parseFloat(parts[3]);
+  return Number.isFinite(alpha) && alpha === 0;
+}
+
 /**
  * Overrides certain methods on a 2d ctx so that when they are called they
  * will also call the same method on the destCtx. The methods that are
@@ -548,7 +567,8 @@ class CanvasGraphics {
     annotationCanvasMap,
     pageColors,
     dependencyTracker,
-    imagesTracker
+    imagesTracker,
+    imageCoordinates = null
   ) {
     this.ctx = canvasCtx;
     this.current = new CanvasExtraState(
@@ -597,6 +617,8 @@ class CanvasGraphics {
     this.outputScaleX = 1;
     this.outputScaleY = 1;
     this.pageColors = pageColors;
+    this.transparentPageBackground = false;
+    this.imageCoordinates = imageCoordinates;
 
     this._cachedScaleForStroking = [-1, 0];
     this._cachedGetSinglePixelWidth = null;
@@ -621,6 +643,7 @@ class CanvasGraphics {
     viewport,
     transparency = false,
     background = null,
+    transparentPageBackground = false,
   }) {
     // For pdfs that use blend modes we have to clear the canvas else certain
     // blend modes can look wrong since we'd be blending with a white
@@ -629,11 +652,16 @@ class CanvasGraphics {
     // transparent canvas when we have blend modes.
     const width = this.ctx.canvas.width;
     const height = this.ctx.canvas.height;
+    this.transparentPageBackground = transparentPageBackground;
 
-    const savedFillStyle = this.ctx.fillStyle;
-    this.ctx.fillStyle = this.pageColors ? "#ffffff" : background || "#ffffff";
-    this.ctx.fillRect(0, 0, width, height);
-    this.ctx.fillStyle = savedFillStyle;
+    if (!transparentPageBackground) {
+      const savedFillStyle = this.ctx.fillStyle;
+      this.ctx.fillStyle = this.pageColors
+        ? "#ffffff"
+        : background || "#ffffff";
+      this.ctx.fillRect(0, 0, width, height);
+      this.ctx.fillStyle = savedFillStyle;
+    }
 
     if (transparency) {
       const transparentCanvas = (this.transparentCanvasEntry =
@@ -819,6 +847,23 @@ class CanvasGraphics {
   }
 
   #drawFilter() {
+    const pageColors = this.#resolvePageColors();
+    if (!pageColors) {
+      return;
+    }
+    const filterConfig = this.#getFilterConfig(pageColors);
+    if (!filterConfig) {
+      return;
+    }
+
+    const { width, height } = this.ctx.canvas;
+    const imageData = this.ctx.getImageData(0, 0, width, height);
+    const imageMask = this.#getImageMaskData(width, height);
+    this.#applyFilterToImageData(imageData.data, imageMask, filterConfig);
+    this.ctx.putImageData(imageData, 0, 0);
+  }
+
+  #resolvePageColors() {
     let pageColors = this.pageColors;
     if (!pageColors && typeof document !== "undefined") {
       const styles = getComputedStyle(document.documentElement);
@@ -830,13 +875,40 @@ class CanvasGraphics {
         pageColors = { foreground, background };
       }
     }
-    if (!pageColors) {
-      return;
+    return pageColors;
+  }
+
+  #getFilterConfig(pageColors) {
+    const [fgR, fgG, fgB] = getRGB(pageColors.foreground);
+    const useTransparentForegroundFilter =
+      this.transparentPageBackground &&
+      isFullyTransparentColor(pageColors.background);
+    if (useTransparentForegroundFilter) {
+      return {
+        mode: FILTER_MODE_TRANSPARENT_FOREGROUND,
+        fgR,
+        fgG,
+        fgB,
+      };
     }
 
-    const [fgR, fgG, fgB] = getRGB(pageColors.foreground);
     const [bgR, bgG, bgB] = getRGB(pageColors.background);
-    if (
+    if (this.#isIdentityFilter(fgR, fgG, fgB, bgR, bgG, bgB)) {
+      return null;
+    }
+    return {
+      mode: FILTER_MODE_OPAQUE_RECOLOR,
+      fgR,
+      fgG,
+      fgB,
+      bgR,
+      bgG,
+      bgB,
+    };
+  }
+
+  #isIdentityFilter(fgR, fgG, fgB, bgR, bgG, bgB) {
+    return (
       (fgR === 0 &&
         fgG === 0 &&
         fgB === 0 &&
@@ -844,27 +916,87 @@ class CanvasGraphics {
         bgG === 255 &&
         bgB === 255) ||
       (fgR === bgR && fgG === bgG && fgB === bgB)
-    ) {
+    );
+  }
+
+  #applyFilterToImageData(data, imageMask, filterConfig) {
+    const { fgR, fgG, fgB, mode } = filterConfig;
+
+    // Transparent mode keeps only foreground intensity in alpha to preserve
+    // page transparency while recoloring non-image content.
+    if (mode === FILTER_MODE_TRANSPARENT_FOREGROUND) {
+      for (let i = 0, ii = data.length; i < ii; i += 4) {
+        const alpha = data[i + 3];
+        if (alpha === 0 || imageMask?.[i + 3]) {
+          continue;
+        }
+        const luminance =
+          (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) /
+          255;
+        data[i] = fgR;
+        data[i + 1] = fgG;
+        data[i + 2] = fgB;
+        data[i + 3] = Math.round(alpha * (1 - luminance));
+      }
       return;
     }
 
-    const { width, height } = this.ctx.canvas;
-    const imageData = this.ctx.getImageData(0, 0, width, height);
-    const { data } = imageData;
+    const { bgR, bgG, bgB } = filterConfig;
     for (let i = 0, ii = data.length; i < ii; i += 4) {
       const alpha = data[i + 3];
-      if (alpha === 0) {
+      if (alpha === 0 || imageMask?.[i + 3]) {
         continue;
       }
 
       const luminance =
-        (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) /
-        255;
+        (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
       data[i] = Math.round(fgR + luminance * (bgR - fgR));
       data[i + 1] = Math.round(fgG + luminance * (bgG - fgG));
       data[i + 2] = Math.round(fgB + luminance * (bgB - fgB));
     }
-    this.ctx.putImageData(imageData, 0, 0);
+  }
+
+  #getImageMaskData(width, height) {
+    const imageCoordinates = this.#getImageCoordinates();
+    if (!imageCoordinates?.length) {
+      return null;
+    }
+
+    const maskCanvas = this.canvasFactory.create(width, height);
+    const { context: maskCtx } = maskCanvas;
+    maskCtx.save();
+    resetCtxToDefault(maskCtx);
+    maskCtx.fillStyle = "#000";
+    this.#fillImageMask(maskCtx, imageCoordinates, width, height);
+    maskCtx.restore();
+    const maskData = maskCtx.getImageData(0, 0, width, height).data;
+    this.canvasFactory.destroy(maskCanvas);
+    return maskData;
+  }
+
+  #getImageCoordinates() {
+    return this.imagesTracker?.take() || this.imageCoordinates;
+  }
+
+  #fillImageMask(maskCtx, imageCoordinates, width, height) {
+    for (let i = 0, ii = imageCoordinates.length; i < ii; i += 6) {
+      const topLeftX = imageCoordinates[i] * width;
+      const topLeftY = imageCoordinates[i + 1] * height;
+      const bottomLeftX = imageCoordinates[i + 2] * width;
+      const bottomLeftY = imageCoordinates[i + 3] * height;
+      const topRightX = imageCoordinates[i + 4] * width;
+      const topRightY = imageCoordinates[i + 5] * height;
+      const bottomRightX = bottomLeftX + topRightX - topLeftX;
+      const bottomRightY = bottomLeftY + topRightY - topLeftY;
+
+      maskCtx.beginPath();
+      maskCtx.moveTo(topLeftX, topLeftY);
+      maskCtx.lineTo(bottomLeftX, bottomLeftY);
+      maskCtx.lineTo(bottomRightX, bottomRightY);
+      maskCtx.lineTo(topRightX, topRightY);
+      maskCtx.closePath();
+      maskCtx.fill();
+    }
   }
 
   _scaleImage(img, inverseTransform) {
@@ -3154,6 +3286,7 @@ class CanvasGraphics {
     );
 
     const inv = getCurrentTransformInverse(ctx);
+
     if (inv) {
       const { width, height } = ctx.canvas;
       const minMax = F32_BBOX_INIT.slice();

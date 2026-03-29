@@ -16,6 +16,20 @@
 import { FeatureTest, RenderingCancelledException } from "pdfjs-lib";
 import { RenderableView, RenderingStates } from "./renderable_view.js";
 
+function resolvePageColors(pageColors) {
+  if (typeof document === "undefined") {
+    return { background: null, pageColors };
+  }
+  const styles = getComputedStyle(document.documentElement);
+  const background = styles.getPropertyValue("--page-bg-color").trim() || null;
+  const foreground = styles.getPropertyValue("--page-fg-color").trim() || null;
+  return {
+    background,
+    pageColors:
+      background && foreground ? { background, foreground } : pageColors,
+  };
+}
+
 class BasePDFPageView extends RenderableView {
   #loadingId = null;
 
@@ -52,11 +66,14 @@ class BasePDFPageView extends RenderableView {
 
   renderingQueue = null;
 
+  transparentPageBackground = false;
+
   constructor(options) {
     super();
     this.eventBus = options.eventBus;
     this.id = options.id;
     this.pageColors = options.pageColors || null;
+    this.transparentPageBackground = options.transparentPageBackground === true;
     this.renderingQueue = options.renderingQueue;
     this.enableOptimizedPartialRendering =
       options.enableOptimizedPartialRendering ?? false;
@@ -109,9 +126,14 @@ class BasePDFPageView extends RenderableView {
     }
   }
 
+  _useCanvasAlpha() {
+    return this.transparentPageBackground && !this.pageColors;
+  }
+
   _createCanvas(onShow, hideUntilComplete = false) {
     const { pageColors } = this;
     const hasHCM = !!(pageColors?.background && pageColors?.foreground);
+    const alpha = this._useCanvasAlpha();
     const prevCanvas = this.canvas;
 
     // In HCM, a final filter is applied on the canvas which means that
@@ -143,7 +165,7 @@ class BasePDFPageView extends RenderableView {
 
         if (tempCanvas) {
           const ctx = canvas.getContext("2d", {
-            alpha: false,
+            alpha,
           });
           ctx.drawImage(tempCanvas, 0, 0);
           if (isLastShow) {
@@ -242,7 +264,7 @@ class BasePDFPageView extends RenderableView {
         if (this.enableOptimizedPartialRendering) {
           this.recordedBBoxes ??= renderTask.recordedBBoxes;
         }
-        if (this.imagesRightClickMinSize !== -1) {
+        if (options.recordImages) {
           this.imageCoordinates ??= this.pdfPage.imageCoordinates;
         }
       }
@@ -283,4 +305,4 @@ class BasePDFPageView extends RenderableView {
   }
 }
 
-export { BasePDFPageView };
+export { BasePDFPageView, resolvePageColors };

@@ -1281,6 +1281,9 @@ class PDFDocumentProxy {
  * @property {object} [pageColors] - Overwrites background and foreground colors
  *   with user defined ones in order to improve readability in high contrast
  *   mode.
+ * @property {boolean} [transparentPageBackground] - Suppress page-sized PDF
+ *   background paints when rendering into a transparent page canvas.
+ *   This option is ignored when the `pageColors`-option is used.
  * @property {Promise<OptionalContentConfig>} [optionalContentConfigPromise] -
  *   A promise that should resolve with an {@link OptionalContentConfig}
  *   created from `PDFDocumentProxy.getOptionalContentConfig`. If `null`,
@@ -1291,6 +1294,8 @@ class PDFDocumentProxy {
  * @property {PrintAnnotationStorage} [printAnnotationStorage]
  * @property {boolean} [isEditing] - Render the page in editing mode.
  * @property {boolean} [recordImages] - Record the location of images in the PDF
+ * @property {Float32Array | Float16Array} [imageCoordinates] - Cached
+ *   coordinates of images in normalized canvas space.
  * @property {boolean} [recordOperations] - Record the dependencies and bounding
  *   boxes of all PDF operations that render onto the canvas.
  * @property {boolean} [partialFrames] - Emit partial renderings of the page
@@ -1534,9 +1539,11 @@ class PDFPageProxy {
     optionalContentConfigPromise = null,
     annotationCanvasMap = null,
     pageColors = null,
+    transparentPageBackground = false,
     printAnnotationStorage = null,
     isEditing = false,
     recordImages = false,
+    imageCoordinates = this.imageCoordinates,
     recordOperations = false,
     partialFrames = false,
     operationsFilter = null,
@@ -1663,6 +1670,8 @@ class PDFPageProxy {
         viewport,
         transform,
         background,
+        transparentPageBackground,
+        imageCoordinates,
         recordOperations: shouldRecordOperations,
         recordImages: shouldRecordImages,
         partialFrames,
@@ -3677,7 +3686,9 @@ class InternalRenderTask {
       if (this.cancelled) {
         return;
       }
-      const ctx = this._canvas.getContext("2d", { alpha: false });
+      const ctx = this._canvas.getContext("2d", {
+        alpha: !!this.params.transparentPageBackground,
+      });
       ctx.drawImage(bitmap, 0, 0);
       if (annotationBitmaps) {
         this.#drawAnnotationFrames(annotationBitmaps);
@@ -3712,7 +3723,13 @@ class InternalRenderTask {
       this.stepper.init(this.operatorList);
       this.stepper.nextBreakPoint = this.stepper.getNextBreakPoint();
     }
-    const { viewport, transform, background } = this.params;
+    const {
+      viewport,
+      transform,
+      background,
+      imageCoordinates,
+      transparentPageBackground,
+    } = this.params;
 
     // The stepper-driven debug recording path needs `gfx` on the main thread,
     // so we have to fall back to local rendering when it's enabled. Plain
@@ -3745,6 +3762,7 @@ class InternalRenderTask {
           viewport,
           transparency,
           background,
+          transparentPageBackground,
         };
         // Wait for the renderer worker to finish setup, so that a failure can
         // still fall back to main-thread rendering below.
@@ -3771,7 +3789,7 @@ class InternalRenderTask {
       const canvasContext =
         this._canvasContext ||
         this._canvas.getContext("2d", {
-          alpha: false,
+          alpha: !!transparentPageBackground,
           willReadFrequently: !this._enableHWA,
         });
 
@@ -3804,13 +3822,15 @@ class InternalRenderTask {
         this.annotationCanvasMap,
         this.pageColors,
         dependencyTracker ?? bboxTracker,
-        imagesTracker
+        imagesTracker,
+        imageCoordinates
       );
       this.gfx.beginDrawing({
         transform,
         viewport,
         transparency,
         background,
+        transparentPageBackground,
       });
     }
     this.operatorListIdx = 0;

@@ -306,6 +306,7 @@ class RendererMessageHandler {
         viewport,
         transparency,
         background,
+        transparentPageBackground = false,
         recordOperations = false,
         recordImages = false,
         partialFrames = false,
@@ -345,7 +346,7 @@ class RendererMessageHandler {
         );
 
         const ctx = canvas.getContext("2d", {
-          alpha: false,
+          alpha: !!transparentPageBackground,
           willReadFrequently: !enableHWA,
         });
         const canvasFactory = new OffscreenCanvasFactory({ enableHWA });
@@ -387,6 +388,7 @@ class RendererMessageHandler {
           viewport,
           transparency,
           background,
+          transparentPageBackground,
         });
 
         renderTaskState.gfx = gfx;

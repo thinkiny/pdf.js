@@ -468,10 +468,10 @@ class ViewsManager extends Sidebar {
 
       if (count) {
         this.#showUINotification();
-      } else {
+      } else if (this.active === view) {
         // If the `view` was opened by the user during document load,
         // switch away from it if it turns out to be empty.
-        this.switchView(this.active);
+        this.switchView(SidebarView.OUTLINE);
       }
     };
 
